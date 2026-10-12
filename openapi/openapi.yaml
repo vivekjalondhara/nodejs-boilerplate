@@ -1,0 +1,607 @@
+openapi: 3.1.0
+info:
+  title: Standalone Backend API
+  version: 1.0.0
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /api/items:
+    get:
+      operationId: listItems
+      responses:
+        "200":
+          description: Items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateItemRequest"
+      responses:
+        "201":
+          description: Created item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /api/items/{id}:
+    get:
+      operationId: getItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /api/files:
+    get:
+      security: &a1
+        - FilesApiKey: []
+      operationId: getFilePresignedUrl
+      description: Authorize an application-owned key and return a presigned download
+        URL; this endpoint does not stream file bytes.
+      parameters:
+        - name: keyPath
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/FileKey"
+        - name: expiresIn
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 604800
+            default: 86400
+      responses:
+        "200":
+          description: Download URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresignedDownloadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+    delete:
+      security: *a1
+      operationId: deleteFiles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteFilesRequest"
+      responses:
+        "200":
+          description: Deleted keys; storage errors are never reported as successful
+            deletion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteFilesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "502":
+          $ref: "#/components/responses/StorageError"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+  /api/files/presigned-url:
+    post:
+      security: *a1
+      operationId: getFileUploadPresignedUrl
+      description: Generate a unique temp/uploads key and a presigned PUT URL. Send
+        the returned Content-Type header on the PUT. Direct PUT bypasses
+        multipart size/type byte checks and image metadata stripping.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadPresignedRequest"
+      responses:
+        "200":
+          description: Upload URL and generated key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresignedUploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+  /api/files/upload:
+    post:
+      security: *a1
+      operationId: uploadFiles
+      description: Disk-first multipart upload. Maximum 20 files, 25 MiB each. Raster
+        image metadata is stripped. Temporary files are removed; earlier
+        successful uploads are deleted if a later file fails.
+      parameters:
+        - name: folder_name
+          in: query
+          schema:
+            type: string
+            maxLength: 255
+            pattern: ^[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)*$
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          description: Uploaded file metadata; path is the storage key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileUploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+components:
+  schemas:
+    CreateItemRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+    Item:
+      type: object
+      required:
+        - id
+        - name
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Health:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          const: ok
+    ErrorResponse:
+      type: object
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          type: "null"
+        message:
+          type: string
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: error
+    ItemResponse:
+      type: object
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          $ref: "#/components/schemas/Item"
+        message:
+          type: string
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: success
+    ItemListResponse:
+      type: object
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        message:
+          type: string
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: success
+    HealthResponse:
+      type: object
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          $ref: "#/components/schemas/Health"
+        message:
+          type: string
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: success
+    FileKey:
+      type: string
+      minLength: 1
+      maxLength: 1024
+      description: Literal storage key under the configured FILES_KEY_PREFIX. Store
+        this key, not an expiring URL.
+    UploadPresignedRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - keyPath
+      properties:
+        keyPath:
+          type: object
+          additionalProperties: false
+          required:
+            - name
+            - type
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 255
+            type:
+              type: string
+              minLength: 1
+        expiresIn:
+          type: integer
+          minimum: 1
+          maximum: 604800
+    DeleteFilesRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - keyPaths
+      properties:
+        keyPaths:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/FileKey"
+    PresignedDownload:
+      type: object
+      additionalProperties: false
+      required:
+        - url
+        - expiresIn
+      properties:
+        url:
+          type: string
+          format: uri
+        expiresIn:
+          type: integer
+    PresignedUpload:
+      type: object
+      additionalProperties: false
+      required:
+        - url
+        - keyPath
+        - expiresIn
+        - headers
+      properties:
+        url:
+          type: string
+          format: uri
+        keyPath:
+          $ref: "#/components/schemas/FileKey"
+        expiresIn:
+          type: integer
+        headers:
+          type: object
+          additionalProperties: false
+          required:
+            - Content-Type
+          properties:
+            Content-Type: &a2
+              type: string
+    UploadedFile:
+      type: object
+      additionalProperties: false
+      required:
+        - fieldname
+        - originalname
+        - mimetype
+        - size
+        - bucket
+        - key
+        - path
+      properties:
+        fieldname: *a2
+        originalname: *a2
+        mimetype: *a2
+        size:
+          type: integer
+        bucket: *a2
+        key:
+          $ref: "#/components/schemas/FileKey"
+        path:
+          $ref: "#/components/schemas/FileKey"
+    PresignedDownloadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          $ref: "#/components/schemas/PresignedDownload"
+        message: *a2
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: success
+    PresignedUploadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          $ref: "#/components/schemas/PresignedUpload"
+        message: *a2
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: success
+    FileUploadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadedFile"
+        message: *a2
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: success
+    DeleteFilesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - message
+        - toast
+        - responseType
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required:
+            - deleted
+          properties:
+            deleted:
+              type: array
+              items:
+                $ref: "#/components/schemas/FileKey"
+        message: *a2
+        toast:
+          type: boolean
+        responseType:
+          type: string
+          const: success
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ValidationError:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Item not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: Too many requests
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing or invalid file API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    StorageUnavailable:
+      description: File storage or file API key is not configured
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: File exceeds the upload limit
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    StorageError:
+      description: Storage could not complete deletion
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  securitySchemes:
+    FilesApiKey:
+      type: apiKey
+      in: header
+      name: X-Files-API-Key
+      description: Server-to-server application key. Never embed this key in a public
+        browser application.
